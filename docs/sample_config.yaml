@@ -1360,6 +1360,18 @@ saml2_config:
 #   #    name: value
 
 
+# Enable OpenID Connect for registration and login.
+#
+#oidc:
+#  enabled: true
+#  provider:
+#    client_id: "client_id_here"
+#    base_url: "https://openid.example.com"
+#    authorize_path: "/authorize"
+#    userinfo_path: "/userinfo"
+#    token_path: "/token"
+
+
 # Additional settings to use with single-sign on systems such as SAML2 and CAS.
 #
 sso:

@@ -27,6 +27,7 @@ from .jwt_config import JWTConfig
 from .key import KeyConfig
 from .logger import LoggingConfig
 from .metrics import MetricsConfig
+from .oidc import OIDCConfig
 from .password import PasswordConfig
 from .password_auth_providers import PasswordAuthProviderConfig
 from .push import PushConfig
@@ -67,6 +68,7 @@ class HomeServerConfig(RootConfig):
         SAML2Config,
         CasConfig,
         SSOConfig,
+        OIDCConfig,
         JWTConfig,
         PasswordConfig,
         EmailConfig,
