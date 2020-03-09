@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import logging
+import uuid
 import xml.etree.ElementTree as ET
 
 from six.moves import urllib
@@ -76,6 +77,7 @@ def login_id_thirdparty_from_phone(identifier):
 class LoginRestServlet(RestServlet):
     PATTERNS = client_patterns("/login$", v1=True)
     CAS_TYPE = "m.login.cas"
+    OIDC_TYPE = "m.login.oidc"
     SSO_TYPE = "m.login.sso"
     TOKEN_TYPE = "m.login.token"
     JWT_TYPE = "m.login.jwt"
@@ -88,6 +90,7 @@ class LoginRestServlet(RestServlet):
         self.jwt_algorithm = hs.config.jwt_algorithm
         self.saml2_enabled = hs.config.saml2_enabled
         self.cas_enabled = hs.config.cas_enabled
+        self.oidc_enabled = hs.config.oidc_enabled
         self.auth_handler = self.hs.get_auth_handler()
         self.registration_handler = hs.get_registration_handler()
         self.handlers = hs.get_handlers()
@@ -523,6 +526,28 @@ class CasTicketServlet(RestServlet):
         return user, attributes
 
 
+class OIDCRedirectServlet(BaseSSORedirectServlet):
+    PATTERNS = client_patterns("/login/oidc/redirect", v1=True)
+
+    def __init__(self, hs):
+        super().__init__()
+        self.oidc_authorize_url = hs.config.oidc_provider_authorize_url.encode("ascii")
+        self.oidc_client_id = hs.config.oidc_provider_authorize_url.encode("ascii")
+        # TODO state needs saving for later
+        self.oidc_state = uuid.uuid4()
+
+    def get_sso_url(self, client_redirect_url):
+        # TODO client_redirect_url needs saving for later
+        params = urllib.parse.urlencode({
+            b"response_type": b"code",
+            b"scope": b"openid preferred_username",
+            b"client_id": b"%s" % self.oidc_client_id,
+            b"state": b"%s" % self.oidc_state,
+            b"redirect_uri": b"%s/client/v1/login/oidc/cb",
+        }).encode("ascii")
+        return b"%s?%s" % (self.oidc_authorize_url, params)
+
+
 class SAMLRedirectServlet(BaseSSORedirectServlet):
     PATTERNS = client_patterns("/login/sso/redirect", v1=True)
 
@@ -602,3 +627,5 @@ def register_servlets(hs, http_server):
         CasTicketServlet(hs).register(http_server)
     elif hs.config.saml2_enabled:
         SAMLRedirectServlet(hs).register(http_server)
+    if hs.config.oidc_enabled:
+        OIDCRedirectServlet(hs).register(http_server)
