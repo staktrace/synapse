@@ -486,6 +486,8 @@ class CasTicketServlet(RestServlet):
                 if required_value != actual_value:
                     raise LoginError(401, "Unauthorized", errcode=Codes.UNAUTHORIZED)
 
+        # TODO Do something here to complete the ui-auth instead of login.
+
         return self._sso_auth_handler.on_successful_auth(
             user, request, client_redirect_url, displayname
         )

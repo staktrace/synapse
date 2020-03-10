@@ -113,6 +113,24 @@ if (window.onAuthDone) {
 </html>
 """
 
+SAML2_TEMPLATE = """
+<html>
+<head>
+<title>Authentication</title>
+</head>
+<body>
+<div>
+    <p>
+    A client is trying to remove a device/add an email address/take over
+    your account. To confirm this action,
+    <a href="%(myurl)s">re-authenticate with single sign-on</a>.
+    If you did not expect this, your account may be compromised!
+    </p>
+</div>
+</body>
+</html>
+"""
+
 
 class AuthRestServlet(RestServlet):
     """
@@ -129,6 +147,7 @@ class AuthRestServlet(RestServlet):
         self.auth = hs.get_auth()
         self.auth_handler = hs.get_auth_handler()
         self.registration_handler = hs.get_registration_handler()
+        self._saml_handler = hs.get_saml_handler()
 
     def on_GET(self, request, stagetype):
         session = parse_string(request, "session")
@@ -142,14 +161,6 @@ class AuthRestServlet(RestServlet):
                 % (CLIENT_API_PREFIX, LoginType.RECAPTCHA),
                 "sitekey": self.hs.config.recaptcha_public_key,
             }
-            html_bytes = html.encode("utf8")
-            request.setResponseCode(200)
-            request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
-            request.setHeader(b"Content-Length", b"%d" % (len(html_bytes),))
-
-            request.write(html_bytes)
-            finish_request(request)
-            return None
         elif stagetype == LoginType.TERMS:
             html = TERMS_TEMPLATE % {
                 "session": session,
@@ -158,16 +169,28 @@ class AuthRestServlet(RestServlet):
                 "myurl": "%s/r0/auth/%s/fallback/web"
                 % (CLIENT_API_PREFIX, LoginType.TERMS),
             }
-            html_bytes = html.encode("utf8")
-            request.setResponseCode(200)
-            request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
-            request.setHeader(b"Content-Length", b"%d" % (len(html_bytes),))
-
-            request.write(html_bytes)
-            finish_request(request)
-            return None
+        elif stagetype == LoginType.SSO:
+            # TODO Display a confirmation page which lets the user redirect to
+            #      SAML / CAS.
+            client_redirect_url = ""
+            value = self._saml_handler.handle_redirect_request(
+                client_redirect_url, session
+            )
+            html = SAML2_TEMPLATE % {
+                "myurl": value,
+            }
         else:
             raise SynapseError(404, "Unknown auth stage type")
+
+        # Render the HTML and return.
+        html_bytes = html.encode("utf8")
+        request.setResponseCode(200)
+        request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
+        request.setHeader(b"Content-Length", b"%d" % (len(html_bytes),))
+
+        request.write(html_bytes)
+        finish_request(request)
+        return None
 
     async def on_POST(self, request, stagetype):
 
@@ -196,15 +219,6 @@ class AuthRestServlet(RestServlet):
                     % (CLIENT_API_PREFIX, LoginType.RECAPTCHA),
                     "sitekey": self.hs.config.recaptcha_public_key,
                 }
-            html_bytes = html.encode("utf8")
-            request.setResponseCode(200)
-            request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
-            request.setHeader(b"Content-Length", b"%d" % (len(html_bytes),))
-
-            request.write(html_bytes)
-            finish_request(request)
-
-            return None
         elif stagetype == LoginType.TERMS:
             authdict = {"session": session}
 
@@ -225,16 +239,37 @@ class AuthRestServlet(RestServlet):
                     "myurl": "%s/r0/auth/%s/fallback/web"
                     % (CLIENT_API_PREFIX, LoginType.TERMS),
                 }
-            html_bytes = html.encode("utf8")
-            request.setResponseCode(200)
-            request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
-            request.setHeader(b"Content-Length", b"%d" % (len(html_bytes),))
+        elif stagetype == LoginType.SSO:
+            # TODO Display an error page here? Is the 404 below enough?
+            authdict = {"session": session}
 
-            request.write(html_bytes)
-            finish_request(request)
-            return None
+            # TODO
+            success = await self.auth_handler.add_oob_auth(
+                LoginType.TERMS, authdict, self.hs.get_ip_from_request(request)
+            )
+
+            if success:
+                html = SUCCESS_TEMPLATE
+            else:
+                client_redirect_url = ""
+                value = self._saml_handler.handle_redirect_request(
+                    client_redirect_url, session
+                )
+                html = SAML2_TEMPLATE % {
+                    "myurl": value,
+                }
         else:
             raise SynapseError(404, "Unknown auth stage type")
+
+        # Render the HTML and return.
+        html_bytes = html.encode("utf8")
+        request.setResponseCode(200)
+        request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
+        request.setHeader(b"Content-Length", b"%d" % (len(html_bytes),))
+
+        request.write(html_bytes)
+        finish_request(request)
+        return None
 
     def on_OPTIONS(self, _):
         return 200, {}
