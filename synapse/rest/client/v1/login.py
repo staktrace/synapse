@@ -545,8 +545,9 @@ class OIDCRedirectServlet(BaseSSORedirectServlet):
     def __init__(self, hs):
         super().__init__()
         self._random = random.SystemRandom()
+        self.public_baseurl = hs.config.public_baseurl.encode("ascii")
         self.oidc_authorize_url = hs.config.oidc_provider_authorize_url.encode("ascii")
-        self.oidc_client_id = hs.config.oidc_provider_authorize_url.encode("ascii")
+        self.oidc_client_id = hs.config.oidc_provider_client_id.encode("ascii")
         self.oidc_session_validity_ms = hs.config.oidc_session_validity_ms
         self.oidc_state = str(uuid.uuid4())
 
@@ -564,7 +565,6 @@ class OIDCRedirectServlet(BaseSSORedirectServlet):
         )
 
         oidc_sessions[session_id] = session
-        # TODO set token
         logger.info("Recorded OIDCS registration session id %s", session_id)
 
     def get_sso_url(self):
@@ -572,9 +572,9 @@ class OIDCRedirectServlet(BaseSSORedirectServlet):
         params = urllib.parse.urlencode({
             b"response_type": b"code",
             b"scope": b"openid preferred_username",
-            b"client_id": b"%s" % self.oidc_client_id.encode("ascii"),
+            b"client_id": b"%s" % self.oidc_client_id,
             b"state": b"%s" % self.oidc_state.encode("ascii"),
-            b"redirect_uri": b"%s/client/v1/login/oidc/cb",
+            b"redirect_uri": b"%s/client/v1/login/oidc/cb" % self.public_baseurl,
         }).encode("ascii")
         return b"%s?%s" % (self.oidc_authorize_url, params)
 
@@ -660,7 +660,4 @@ def register_servlets(hs, http_server):
         SAMLRedirectServlet(hs).register(http_server)
 
     if hs.config.oidc_enabled:
-        logger.warning("INITIALIZING OIDC REDIRECT SERVLET")
         OIDCRedirectServlet(hs).register(http_server)
-    else:
-        logger.warning("NOOOOOOOOOOOOOOOOOOT INITIALIZING OIDC REDIRECT SERVLET")
