@@ -1371,8 +1371,8 @@ saml2_config:
 #    authorize_path: "/authorize"
 #    userinfo_path: "/userinfo"
 #    token_path: "/token"
-#    # Defaults to 15 minutes if not set
-#    #session_validity_ms: 15 * 60 * 1000
+#  # Defaults to 15 minutes if not set
+#  #session_validity_ms: 15 * 60 * 1000
 
 
 # Additional settings to use with single-sign on systems such as SAML2 and CAS.
