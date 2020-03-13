@@ -48,6 +48,7 @@ class OIDCConfig(Config):
         self.oidc_provider_token_url = "%s%s" % (base_url, provider.get("token_path"))
         self.oidc_provider_userinfo_url = "%s%s" % (base_url, provider.get("userinfo_path"))
         self.oidc_provider_client_id = provider.get("client_id")
+        self.oidc_provider_client_secret = provider.get("client_secret")
         self.oidc_session_validity_ms = oidc_config.get("session_validity_ms", 15 * 60 * 1000)
 
     # noinspection PyUnusedLocal
@@ -60,6 +61,7 @@ class OIDCConfig(Config):
         #  enabled: true
         #  provider:
         #    client_id: "client_id_here"
+        #    #client_secret: "client_secret_here, if required by the provider"
         #    base_url: "https://openid.example.com"
         #    authorize_path: "/authorize"
         #    userinfo_path: "/userinfo"

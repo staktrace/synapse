@@ -1366,6 +1366,7 @@ saml2_config:
 #  enabled: true
 #  provider:
 #    client_id: "client_id_here"
+#    #client_secret: "client_secret_here, if required by the provider"
 #    base_url: "https://openid.example.com"
 #    authorize_path: "/authorize"
 #    userinfo_path: "/userinfo"
