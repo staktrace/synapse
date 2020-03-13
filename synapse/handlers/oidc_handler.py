@@ -87,7 +87,7 @@ class OIDCHandler:
             b"redirect_uri": b"%s_synapse/oidc/authorize_response" % self._server_baseurl.encode("ascii"),
         }
         params = urlencode(params).encode("ascii")
-        return b"%s?%s" % (self._authorize_url, params)
+        return b"%s?%s" % (self._authorize_url.encode("ascii"), params)
 
     async def handle_authorization_response(self, request):
         """Handle an incoming request to /_synapse/oidc/authorize_response
