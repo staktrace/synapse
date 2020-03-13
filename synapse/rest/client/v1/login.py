@@ -564,6 +564,7 @@ class OIDCRedirectServlet(BaseSSORedirectServlet):
         )
 
         oidc_sessions[session_id] = session
+        # TODO set token
         logger.info("Recorded OIDCS registration session id %s", session_id)
 
     def get_sso_url(self):
@@ -657,5 +658,9 @@ def register_servlets(hs, http_server):
         CasTicketServlet(hs).register(http_server)
     elif hs.config.saml2_enabled:
         SAMLRedirectServlet(hs).register(http_server)
+
     if hs.config.oidc_enabled:
+        logger.warning("INITIALIZING OIDC REDIRECT SERVLET")
         OIDCRedirectServlet(hs).register(http_server)
+    else:
+        logger.warning("NOOOOOOOOOOOOOOOOOOT INITIALIZING OIDC REDIRECT SERVLET")

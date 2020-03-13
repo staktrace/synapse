@@ -24,6 +24,7 @@ class OIDCConfig(Config):
     # noinspection PyAttributeOutsideInit,PyUnusedLocal
     def read_config(self, config, **kwargs):
         oidc_config = config.get("oidc", {})
+        print(oidc_config)
         self.oidc_enabled = oidc_config.get("enabled", False)
         if not self.oidc_enabled:
             return
