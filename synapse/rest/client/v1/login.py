@@ -572,8 +572,8 @@ class OIDCRedirectServlet(BaseSSORedirectServlet):
         params = urllib.parse.urlencode({
             b"response_type": b"code",
             b"scope": b"openid preferred_username",
-            b"client_id": b"%s" % self.oidc_client_id,
-            b"state": b"%s" % self.oidc_state,
+            b"client_id": b"%s" % self.oidc_client_id.encode("ascii"),
+            b"state": b"%s" % self.oidc_state.encode("ascii"),
             b"redirect_uri": b"%s/client/v1/login/oidc/cb",
         }).encode("ascii")
         return b"%s?%s" % (self.oidc_authorize_url, params)
