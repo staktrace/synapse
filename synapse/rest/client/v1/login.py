@@ -569,13 +569,14 @@ class OIDCRedirectServlet(BaseSSORedirectServlet):
 
     def get_sso_url(self):
         # Save this on the class so we can create the session when setting cookies
-        params = urllib.parse.urlencode({
+        params = {
             b"response_type": b"code",
             b"scope": b"openid preferred_username",
             b"client_id": b"%s" % self.oidc_client_id,
             b"state": b"%s" % self.oidc_state.encode("ascii"),
-            b"redirect_uri": b"%s/client/v1/login/oidc/cb" % self.public_baseurl,
-        }).encode("ascii")
+            b"redirect_uri": b"%s_matrix/client/v1/login/oidc/cb" % self.public_baseurl,
+        }
+        params = urllib.parse.urlencode(params).encode("ascii")
         return b"%s?%s" % (self.oidc_authorize_url, params)
 
 
