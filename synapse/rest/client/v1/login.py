@@ -14,10 +14,6 @@
 # limitations under the License.
 
 import logging
-import random
-import string
-import time
-import uuid
 import xml.etree.ElementTree as ET
 
 from six.moves import urllib
@@ -33,7 +29,6 @@ from synapse.http.servlet import (
     parse_string,
 )
 from synapse.push.mailer import load_jinja2_templates
-from synapse.rest.client.v1._oidc_session import OIDCSession, oidc_sessions
 from synapse.rest.client.v2_alpha._base import client_patterns
 from synapse.rest.well_known import WellKnownBuilder
 from synapse.types import UserID, map_username_to_mxid_localpart
@@ -81,7 +76,6 @@ def login_id_thirdparty_from_phone(identifier):
 class LoginRestServlet(RestServlet):
     PATTERNS = client_patterns("/login$", v1=True)
     CAS_TYPE = "m.login.cas"
-    OIDC_TYPE = "m.login.oidc"
     SSO_TYPE = "m.login.sso"
     TOKEN_TYPE = "m.login.token"
     JWT_TYPE = "m.login.jwt"
@@ -411,7 +405,7 @@ class BaseSSORedirectServlet(RestServlet):
     client_redirect_url = None
     # Request object
     request = None
-    PATTERNS = client_patterns("/login/(cas|oidc|sso)/redirect", v1=True)
+    PATTERNS = client_patterns("/login/(cas|sso)/redirect", v1=True)
 
     def on_GET(self, request):
         args = request.args
@@ -420,16 +414,8 @@ class BaseSSORedirectServlet(RestServlet):
             return 400, "Redirect URL not specified for SSO auth"
         self.client_redirect_url = args[b"redirectUrl"][0]
         sso_url = self.get_sso_url()
-        self.set_redirect_cookies()
         self.request.redirect(sso_url)
         finish_request(self.request)
-
-    def set_redirect_cookies(self):
-        """Set cookies before doing the SSO redirect.
-
-        Noop unless implemented in subclasses.
-        """
-        pass
 
     def get_sso_url(self):
         """Get the URL to redirect to, to perform SSO auth
@@ -540,44 +526,14 @@ class CasTicketServlet(RestServlet):
 
 
 class OIDCRedirectServlet(BaseSSORedirectServlet):
-    PATTERNS = client_patterns("/login/oidc/redirect", v1=True)
+    PATTERNS = client_patterns("/login/sso/redirect", v1=True)
 
     def __init__(self, hs):
-        super().__init__()
-        self._random = random.SystemRandom()
-        self.public_baseurl = hs.config.public_baseurl.encode("ascii")
-        self.oidc_authorize_url = hs.config.oidc_provider_authorize_url.encode("ascii")
-        self.oidc_client_id = hs.config.oidc_provider_client_id.encode("ascii")
-        self.oidc_session_validity_ms = hs.config.oidc_session_validity_ms
-        self.oidc_state = str(uuid.uuid4())
-
-    def set_redirect_cookies(self):
-        # Create a session and set it in a cookie
-        session_id = "".join(
-            self._random.choice(string.ascii_letters) for _ in range(16)
-        )
-
-        now = int(time.time() * 1000)
-        session = OIDCSession(
-            client_redirect_url=self.client_redirect_url,
-            expiry_time_ms=now + self.oidc_session_validity_ms,
-            state=self.oidc_state,
-        )
-
-        oidc_sessions[session_id] = session
-        logger.info("Recorded OIDCS registration session id %s", session_id)
+        super().__init__(hs)
+        self._oidc_handler = hs.get_oidc_handler()
 
     def get_sso_url(self):
-        # Save this on the class so we can create the session when setting cookies
-        params = {
-            b"response_type": b"code",
-            b"scope": b"openid preferred_username",
-            b"client_id": b"%s" % self.oidc_client_id,
-            b"state": b"%s" % self.oidc_state.encode("ascii"),
-            b"redirect_uri": b"%s_matrix/client/v1/login/oidc/cb" % self.public_baseurl,
-        }
-        params = urllib.parse.urlencode(params).encode("ascii")
-        return b"%s?%s" % (self.oidc_authorize_url, params)
+        return self._oidc_handler.handle_redirect_request(self.request, self.client_redirect_url)
 
 
 class SAMLRedirectServlet(BaseSSORedirectServlet):
@@ -659,6 +615,5 @@ def register_servlets(hs, http_server):
         CasTicketServlet(hs).register(http_server)
     elif hs.config.saml2_enabled:
         SAMLRedirectServlet(hs).register(http_server)
-
-    if hs.config.oidc_enabled:
+    elif hs.config.oidc_enabled:
         OIDCRedirectServlet(hs).register(http_server)

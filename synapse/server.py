@@ -197,6 +197,7 @@ class HomeServer(object):
         "registration_handler",
         "account_validity_handler",
         "saml_handler",
+        "oidc_handler",
         "event_client_serializer",
         "storage",
     ]
@@ -529,6 +530,11 @@ class HomeServer(object):
         from synapse.handlers.saml_handler import SamlHandler
 
         return SamlHandler(self)
+
+    def build_oidc_handler(self):
+        from synapse.handlers.oidc_handler import OIDCHandler
+
+        return OIDCHandler(self)
 
     def build_event_client_serializer(self):
         return EventClientSerializer(self)
