@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright 2020 Matrix Foundation
+# Copyright 2020 The Matrix.org Foundation C.I.C.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,6 +48,7 @@ class OIDCConfig(Config):
         self.oidc_provider_token_url = "%s%s" % (base_url, provider.get("token_path"))
         self.oidc_provider_userinfo_url = "%s%s" % (base_url, provider.get("userinfo_path"))
         self.oidc_provider_client_id = provider.get("client_id")
+        self.oidc_session_validity_ms = oidc_config.get("session_validity_ms", 15 * 60 * 1000)
 
     # noinspection PyUnusedLocal
     @staticmethod
@@ -63,4 +64,6 @@ class OIDCConfig(Config):
         #    authorize_path: "/authorize"
         #    userinfo_path: "/userinfo"
         #    token_path: "/token"
+        #  # Defaults to 15 minutes if not set
+        #  #session_validity_ms: 15 * 60 * 1000
         """

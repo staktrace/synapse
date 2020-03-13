@@ -14,6 +14,9 @@
 # limitations under the License.
 
 import logging
+import random
+import string
+import time
 import uuid
 import xml.etree.ElementTree as ET
 
@@ -30,6 +33,7 @@ from synapse.http.servlet import (
     parse_string,
 )
 from synapse.push.mailer import load_jinja2_templates
+from synapse.rest.client.v1._oidc_session import OIDCSession, oidc_sessions
 from synapse.rest.client.v2_alpha._base import client_patterns
 from synapse.rest.well_known import WellKnownBuilder
 from synapse.types import UserID, map_username_to_mxid_localpart
@@ -403,23 +407,32 @@ class LoginRestServlet(RestServlet):
 class BaseSSORedirectServlet(RestServlet):
     """Common base class for /login/sso/redirect impls"""
 
-    PATTERNS = client_patterns("/login/(cas|sso)/redirect", v1=True)
+    # The URL that we should redirect the client to when everything is done
+    client_redirect_url = None
+    # Request object
+    request = None
+    PATTERNS = client_patterns("/login/(cas|oidc|sso)/redirect", v1=True)
 
     def on_GET(self, request):
         args = request.args
+        self.request = request
         if b"redirectUrl" not in args:
             return 400, "Redirect URL not specified for SSO auth"
-        client_redirect_url = args[b"redirectUrl"][0]
-        sso_url = self.get_sso_url(client_redirect_url)
-        request.redirect(sso_url)
-        finish_request(request)
+        self.client_redirect_url = args[b"redirectUrl"][0]
+        sso_url = self.get_sso_url()
+        self.set_redirect_cookies()
+        self.request.redirect(sso_url)
+        finish_request(self.request)
 
-    def get_sso_url(self, client_redirect_url):
+    def set_redirect_cookies(self):
+        """Set cookies before doing the SSO redirect.
+
+        Noop unless implemented in subclasses.
+        """
+        pass
+
+    def get_sso_url(self):
         """Get the URL to redirect to, to perform SSO auth
-
-        Args:
-            client_redirect_url (bytes): the URL that we should redirect the
-                client to when everything is done
 
         Returns:
             bytes: URL to redirect to
@@ -434,9 +447,9 @@ class CasRedirectServlet(BaseSSORedirectServlet):
         self.cas_server_url = hs.config.cas_server_url.encode("ascii")
         self.cas_service_url = hs.config.cas_service_url.encode("ascii")
 
-    def get_sso_url(self, client_redirect_url):
+    def get_sso_url(self):
         client_redirect_url_param = urllib.parse.urlencode(
-            {b"redirectUrl": client_redirect_url}
+            {b"redirectUrl": self.client_redirect_url}
         ).encode("ascii")
         hs_redirect_url = self.cas_service_url + b"/_matrix/client/r0/login/cas/ticket"
         service_param = urllib.parse.urlencode(
@@ -531,13 +544,30 @@ class OIDCRedirectServlet(BaseSSORedirectServlet):
 
     def __init__(self, hs):
         super().__init__()
+        self._random = random.SystemRandom()
         self.oidc_authorize_url = hs.config.oidc_provider_authorize_url.encode("ascii")
         self.oidc_client_id = hs.config.oidc_provider_authorize_url.encode("ascii")
-        # TODO state needs saving for later
+        self.oidc_session_validity_ms = hs.config.oidc_session_validity_ms
         self.oidc_state = uuid.uuid4()
 
-    def get_sso_url(self, client_redirect_url):
-        # TODO client_redirect_url needs saving for later
+    def set_redirect_cookies(self):
+        # Create a session and set it in a cookie
+        session_id = "".join(
+            self._random.choice(string.ascii_letters) for _ in range(16)
+        )
+
+        now = int(time.time() * 1000)
+        session = OIDCSession(
+            client_redirect_url=self.client_redirect_url,
+            expiry_time_ms=now + self.oidc_session_validity_ms,
+            state=self.oidc_state,
+        )
+
+        oidc_sessions[session_id] = session
+        logger.info("Recorded OIDCS registration session id %s", session_id)
+
+    def get_sso_url(self):
+        # Save this on the class so we can create the session when setting cookies
         params = urllib.parse.urlencode({
             b"response_type": b"code",
             b"scope": b"openid preferred_username",
@@ -554,8 +584,8 @@ class SAMLRedirectServlet(BaseSSORedirectServlet):
     def __init__(self, hs):
         self._saml_handler = hs.get_saml_handler()
 
-    def get_sso_url(self, client_redirect_url):
-        return self._saml_handler.handle_redirect_request(client_redirect_url)
+    def get_sso_url(self):
+        return self._saml_handler.handle_redirect_request(self.client_redirect_url)
 
 
 class SSOAuthHandler(object):
