@@ -548,7 +548,7 @@ class OIDCRedirectServlet(BaseSSORedirectServlet):
         self.oidc_authorize_url = hs.config.oidc_provider_authorize_url.encode("ascii")
         self.oidc_client_id = hs.config.oidc_provider_authorize_url.encode("ascii")
         self.oidc_session_validity_ms = hs.config.oidc_session_validity_ms
-        self.oidc_state = uuid.uuid4()
+        self.oidc_state = str(uuid.uuid4())
 
     def set_redirect_cookies(self):
         # Create a session and set it in a cookie
