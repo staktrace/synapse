@@ -77,6 +77,7 @@ class OIDCHandler:
             creation_time=now,
             state=self._state,
         )
+        request.addCookie("synapse_oidc_session", session_id, path="/", secure=True)
 
         params = {
             b"response_type": b"code",

@@ -529,7 +529,6 @@ class OIDCRedirectServlet(BaseSSORedirectServlet):
     PATTERNS = client_patterns("/login/sso/redirect", v1=True)
 
     def __init__(self, hs):
-        super().__init__(hs)
         self._oidc_handler = hs.get_oidc_handler()
 
     def get_sso_url(self):
