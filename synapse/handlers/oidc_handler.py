@@ -17,6 +17,8 @@ import uuid
 from urllib.parse import urlencode
 
 import attr
+
+from synapse.http.server import finish_request
 from synapse.util.async_helpers import Linearizer
 
 logger = logging.getLogger(__name__)
@@ -98,10 +100,47 @@ class OIDCHandler:
         Returns:
             Deferred[none]: Completes once we have handled the request.
         """
-        # TODO get code and such from request
-        # expire outstanding sessions before parse_authn_request_response checks
-        # the dict.
+        code = request.args.get("code", [b""])[0].decode("utf-8")
+        state = request.args.get("state", [b""])[0].decode("utf-8")
+        session_id = request.getCookie("synapse_oidc_session")
+        if not all((code, state, session_id)):
+            html = b"<html><head></head><body>Response is missing code, state or the seesion cookie.</body></html>"
+            request.setResponseCode(400)
+            request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
+            request.setHeader(b"Content-Length", b"%d" % (len(html),))
+            request.write(html)
+            finish_request(request)
+            return
+
         self.expire_sessions()
+        session = self._outstanding_requests_dict.get(session_id.decode("utf-8"))
+        if not session:
+            html = b"<html><head></head><body>Session has expired, please do try again.</body></html>"
+            request.setResponseCode(403)
+            request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
+            request.setHeader(b"Content-Length", b"%d" % (len(html),))
+            request.write(html)
+            finish_request(request)
+            return
+
+        if session.state != state:
+            html = b"<html><head></head><body>Incorrect state in response.</body></html>"
+            request.setResponseCode(403)
+            request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
+            request.setHeader(b"Content-Length", b"%d" % (len(html),))
+            request.write(html)
+            finish_request(request)
+            return
+
+        # Good to go
+        # TODO do post for token to continue
+
+        html = b"<html></html>"
+        request.setResponseCode(200)
+        request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
+        request.setHeader(b"Content-Length", b"%d" % (len(html),))
+        request.write(html)
+        finish_request(request)
 
     def expire_sessions(self):
         expire_before = self._clock.time_msec() - self._session_validity_ms

@@ -26,5 +26,5 @@ class OIDCAuthorizationResponseResource(DirectServeResource):
         self._oidc_handler = hs.get_oidc_handler()
 
     @wrap_html_request_handler
-    async def _async_render_POST(self, request):
+    async def _async_render_GET(self, request):
         return await self._oidc_handler.handle_authorization_response(request)
