@@ -41,7 +41,7 @@ class SSOConfig(Config):
 
     def generate_config_section(self, **kwargs):
         return """\
-        # Additional settings to use with single-sign on systems such as SAML2 and CAS.
+        # Additional settings to use with single-sign on systems such as SAML2, OIDC and CAS.
         #
         sso:
             # A list of client URLs which are whitelisted so that the user does not
