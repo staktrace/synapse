@@ -53,6 +53,7 @@ class OIDCHandler:
         self._server_baseurl = hs.config.public_baseurl
         self._authorize_url = hs.config.oidc_provider_authorize_url
         self._token_url = hs.config.oidc_provider_token_url
+        self._userinfo_url = hs.config.oidc_provider_userinfo_url
         self._client_id = hs.config.oidc_provider_client_id
         self._client_secret = hs.config.oidc_provider_client_secret
         self._session_validity_ms = hs.config.oidc_session_validity_ms
@@ -80,6 +81,40 @@ class OIDCHandler:
             del self._outstanding_requests_dict[reqid]
 
     @defer.inlineCallbacks
+    def fetch_provider_access_token(self, code: str) -> dict:
+        """Fetch a token from the provider.
+        """
+        headers = {}
+        if self._client_secret:
+            authorization = b"%s:%s" % (self._client_id.encode("ascii"), self._client_secret.encode("ascii"))
+            headers = {
+                b"Authorization": [b"Basic %s" % base64.b64encode(authorization)],
+            }
+        data = yield self._http_client.post_urlencoded_get_json(
+            self._token_url,
+            args={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": "%s_synapse/oidc/authorize_response" % self._server_baseurl,
+            },
+            headers=headers,
+        )
+        return data
+
+    @defer.inlineCallbacks
+    def fetch_provider_userinfo(self, access_token: str) -> dict:
+        """Fetch userinfo from the provider.
+        """
+        headers = {
+            b"Authorization": [b"Bearer %s" % access_token.encode("ascii")],
+        }
+        data = yield self._http_client.get_json(
+            self._userinfo_url,
+            headers=headers,
+        )
+        return data
+
+    @defer.inlineCallbacks
     def handle_authorization_response(self, request):
         """Handle an incoming request to /_synapse/oidc/authorize_response
 
@@ -103,29 +138,21 @@ class OIDCHandler:
         if session.state != state:
             return self.return_error(b"Incorrect state in response.", 403, request)
 
-        # Good to go
-        headers = {}
-        if self._client_secret:
-            authorization = b"%s:%s" % (self._client_id.encode("ascii"), self._client_secret.encode("ascii"))
-            headers = {
-                b"Authorization": [b"Basic %s" % base64.b64encode(authorization)],
-            }
-        logger.info("Trying: %s", self._token_url)
         try:
-            data = yield self._http_client.post_urlencoded_get_json(
-                self._token_url,
-                args={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": "%s_synapse/oidc/authorize_response" % self._server_baseurl,
-                },
-                headers=headers,
-            )
-        except (HttpResponseException, ValueError) as ex:
+            data = yield self.fetch_provider_access_token(code)
+            access_token = data.get("access_token")
+            if not access_token:
+                raise ValueError()
+        except (HttpResponseException, ValueError):
             return self.return_error(b"Fetching token failed.", 400, request)
 
-        logger.info("data: %s", data)
-        html = b"<html><head></head><body>Success so far!</body></html>"
+        try:
+            userinfo = yield self.fetch_provider_userinfo(access_token)
+        except (HttpResponseException, ValueError):
+            return self.return_error(b"Fetching userinfo failed.", 400, request)
+
+        # TODO find or create user
+        html = b"<html><head></head><body><pre>%s</pre></body></html>" % str(userinfo).encode("utf-8")
         request.setResponseCode(200)
         request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
         request.setHeader(b"Content-Length", b"%d" % (len(html),))
