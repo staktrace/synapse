@@ -23,7 +23,7 @@ from twisted.internet import defer
 from synapse.api.errors import HttpResponseException
 from synapse.http.client import SimpleHttpClient
 from synapse.http.server import finish_request
-from synapse.util.async_helpers import Linearizer
+from synapse.types import UserID
 
 logger = logging.getLogger(__name__)
 
@@ -45,30 +45,20 @@ class OIDCSessionData:
 class OIDCHandler:
     def __init__(self, hs):
         self._auth_handler = hs.get_auth_handler()
-        self._registration_handler = hs.get_registration_handler()
-
+        self._authorize_url = hs.config.oidc_provider_authorize_url
+        self._client_id = hs.config.oidc_provider_client_id
+        self._client_secret = hs.config.oidc_provider_client_secret
         self._clock = hs.get_clock()
         self._datastore = hs.get_datastore()
         self._hostname = hs.hostname
+        self._http_client = SimpleHttpClient(hs)
+        self._outstanding_requests_dict = {}
+        self._registration_handler = hs.get_registration_handler()
         self._server_baseurl = hs.config.public_baseurl
-        self._authorize_url = hs.config.oidc_provider_authorize_url
-        self._token_url = hs.config.oidc_provider_token_url
-        self._userinfo_url = hs.config.oidc_provider_userinfo_url
-        self._client_id = hs.config.oidc_provider_client_id
-        self._client_secret = hs.config.oidc_provider_client_secret
         self._session_validity_ms = hs.config.oidc_session_validity_ms
         self._state = str(uuid.uuid4())
-
-        # identifier for the external_ids table
-        self._auth_provider_id = "oidc"
-
-        # a map from oidc session id to OIDCSessionData object
-        self._outstanding_requests_dict = {}
-
-        # a lock on the mappings
-        self._mapping_lock = Linearizer(name="oidc_mapping", clock=self._clock)
-
-        self._http_client = SimpleHttpClient(hs)
+        self._token_url = hs.config.oidc_provider_token_url
+        self._userinfo_url = hs.config.oidc_provider_userinfo_url
 
     def expire_sessions(self):
         expire_before = self._clock.time_msec() - self._session_validity_ms
@@ -128,15 +118,18 @@ class OIDCHandler:
         state = request.args.get(b"state", [b""])[0].decode("utf-8")
         session_id = request.getCookie(b"synapse_oidc_session")
         if not all((code, state, session_id)):
-            return self.return_error(b"Response is missing code, state or the seesion cookie.", 400, request)
+            self.return_error(b"Response is missing code, state or the session cookie.", 400, request)
+            return
 
         self.expire_sessions()
         session = self._outstanding_requests_dict.get(session_id.decode("utf-8"))
         if not session:
-            return self.return_error(b"Session has expired.", 403, request)
+            self.return_error(b"Session has expired.", 403, request)
+            return
 
         if session.state != state:
-            return self.return_error(b"Incorrect state in response.", 403, request)
+            self.return_error(b"Incorrect state in response.", 403, request)
+            return
 
         try:
             data = yield self.fetch_provider_access_token(code)
@@ -144,20 +137,34 @@ class OIDCHandler:
             if not access_token:
                 raise ValueError()
         except (HttpResponseException, ValueError):
-            return self.return_error(b"Fetching token failed.", 400, request)
+            self.return_error(b"Fetching token failed.", 400, request)
+            return
 
         try:
             userinfo = yield self.fetch_provider_userinfo(access_token)
         except (HttpResponseException, ValueError):
-            return self.return_error(b"Fetching userinfo failed.", 400, request)
+            self.return_error(b"Fetching userinfo failed.", 400, request)
+            return
 
-        # TODO find or create user
-        html = b"<html><head></head><body><pre>%s</pre></body></html>" % str(userinfo).encode("utf-8")
-        request.setResponseCode(200)
-        request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
-        request.setHeader(b"Content-Length", b"%d" % (len(html),))
-        request.write(html)
-        finish_request(request)
+        localpart = userinfo.get("preferred_username", "").lower()
+        if not localpart:
+            self.return_error(b"Failed to find a username in userinfo from provider.", 400, request)
+            return
+
+        # Find existing user
+        user_id = UserID(localpart, self._hostname).to_string()
+        user = yield self._datastore.get_user_by_id(user_id)
+        if user:
+            self._auth_handler.complete_sso_login(user_id, request, session.client_redirect_url)
+            return
+
+        # Register a user
+        emails = [userinfo.get("email")] if userinfo.get("email") else []
+        registered_user_id = yield self._registration_handler.register_user(
+            localpart=localpart, default_display_name=userinfo.get("name", localpart),
+            bind_emails=emails,
+        )
+        self._auth_handler.complete_sso_login(registered_user_id, request, session.client_redirect_url)
 
     def handle_redirect_request(self, request, client_redirect_url):
         """Handle an incoming request to /login/sso/redirect
@@ -192,7 +199,7 @@ class OIDCHandler:
     @staticmethod
     def return_error(message, code, request):
         html = b"<html><head></head><body>%s</body></html>" % message
-        request.setResponseCode(400)
+        request.setResponseCode(code)
         request.setHeader(b"Content-Type", b"text/html; charset=utf-8")
         request.setHeader(b"Content-Length", b"%d" % (len(html),))
         request.write(html)
