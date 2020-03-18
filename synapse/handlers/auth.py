@@ -91,9 +91,7 @@ class AuthHandler(BaseHandler):
         self.hs = hs  # FIXME better possibility to access registrationHandler later?
         self.macaroon_gen = hs.get_macaroon_generator()
         self._password_enabled = hs.config.password_enabled
-        self._saml2_enabled = hs.config.saml2_enabled
-        # TODO CAS?
-        # self._cas_enabled = hs.config.cas_enabled
+        self._sso_enabled = hs.config.saml2_enabled or hs.config.cas_enabled
 
         # we keep this as a list despite the O(N^2) implication so that we can
         # keep PASSWORD first and avoid confusing clients which pick the first
@@ -108,7 +106,7 @@ class AuthHandler(BaseHandler):
                 for t in provider.get_supported_login_types().keys():
                     if t not in login_types:
                         login_types.append(t)
-        if self._saml2_enabled:
+        if self._sso_enabled:
             login_types.append(LoginType.SSO)
         self._supported_login_types = login_types
 
